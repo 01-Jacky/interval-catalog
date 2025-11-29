@@ -1,0 +1,13 @@
+services:
+  parser:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      # Mount the data directory containing the HTML file
+      - ./data:/app/data:ro
+      # Mount the output directory to persist results
+      - ./output:/app/output
+    container_name: interval-parser
+    environment:
+      - PYTHONUNBUFFERED=1
