@@ -78,6 +78,28 @@ class ResortGeocoder:
             logger.debug(f"Normalized location: '{location}' -> '{normalized}'")
         return normalized
 
+    def _get_fallback_location(self, location: str) -> Optional[str]:
+        """
+        Get a fallback location string if the original fails to geocode.
+
+        Args:
+            location: Original location string
+
+        Returns:
+            Fallback location string or None if no fallback available
+        """
+        # Fallback patterns: try simpler versions of complex location names
+        fallback_patterns = [
+            ("Dutch Caribbean", "Caribbean"),
+            ("Honolulu, Oahu, Hawaii", "Honolulu, Hawaii"),
+        ]
+
+        for pattern, fallback in fallback_patterns:
+            if pattern.lower() in location.lower():
+                return fallback
+
+        return None
+
     def geocode_location(
         self,
         location: str,
@@ -112,6 +134,18 @@ class ResortGeocoder:
                     sleep(self.rate_limit_delay)
                     return coords
                 else:
+                    # Try fallback location if available
+                    fallback = self._get_fallback_location(normalized_location)
+                    if fallback:
+                        logger.info(f"Trying fallback for '{normalized_location}': '{fallback}'")
+                        fallback_result = self.geolocator.geocode(fallback)
+                        if fallback_result:
+                            coords = (fallback_result.latitude, fallback_result.longitude)
+                            self.cache[normalized_location] = coords
+                            logger.info(f"Geocoded via fallback: {normalized_location} -> {coords}")
+                            sleep(self.rate_limit_delay)
+                            return coords
+
                     logger.warning(f"No results for: {normalized_location}")
                     self.cache[normalized_location] = (None, None)
                     return (None, None)
@@ -188,7 +222,8 @@ class ResortGeocoder:
                 stats["failed_resorts"].append({
                     "code": resort.get("code"),
                     "name": resort.get("name"),
-                    "location": location
+                    "location": location,
+                    "tier": resort.get("tier")
                 })
 
             # Save progress periodically
