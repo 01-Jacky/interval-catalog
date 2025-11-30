@@ -31,6 +31,16 @@ class Settings:
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
 
+        # Geocoding configuration
+        self.GEOCODE_PROVIDER = os.getenv("GEOCODE_PROVIDER", "nominatim")
+        self.GEOCODE_USER_AGENT = os.getenv("GEOCODE_USER_AGENT", "interval-resort-viewer")
+        self.GEOCODE_RATE_LIMIT = float(os.getenv("GEOCODE_RATE_LIMIT", "1.0"))
+        self.GEOCODE_INPUT_PATH = os.getenv("GEOCODE_INPUT_PATH", "output/resorts.json")
+        self.GEOCODE_OUTPUT_PATH = os.getenv("GEOCODE_OUTPUT_PATH", "output/resorts_geocoded.json")
+        self.GEOCODE_CACHE_PATH = os.getenv("GEOCODE_CACHE_PATH", "output/geocode_cache.json")
+        self.GEOCODE_OVERRIDES_PATH = os.getenv("GEOCODE_OVERRIDES_PATH", "data/geocode_overrides.json")
+        self.GEOCODE_LOG_FILE = os.getenv("GEOCODE_LOG_FILE", "logs/geocoder.log")
+
         # Ensure directories exist
         self._ensure_directories()
 
@@ -50,6 +60,26 @@ class Settings:
     def get_log_path(self) -> Path:
         """Get the full path to the log file."""
         return self.BASE_DIR / self.LOG_FILE
+
+    def get_geocode_input_path(self) -> Path:
+        """Get the full path to the geocoding input JSON file."""
+        return self.BASE_DIR / self.GEOCODE_INPUT_PATH
+
+    def get_geocode_output_path(self) -> Path:
+        """Get the full path to the geocoding output JSON file."""
+        return self.BASE_DIR / self.GEOCODE_OUTPUT_PATH
+
+    def get_geocode_cache_path(self) -> Path:
+        """Get the full path to the geocoding cache file."""
+        return self.BASE_DIR / self.GEOCODE_CACHE_PATH
+
+    def get_geocode_overrides_path(self) -> Path:
+        """Get the full path to the geocoding overrides file."""
+        return self.BASE_DIR / self.GEOCODE_OVERRIDES_PATH
+
+    def get_geocode_log_path(self) -> Path:
+        """Get the full path to the geocoding log file."""
+        return self.BASE_DIR / self.GEOCODE_LOG_FILE
 
 
 # Global settings instance

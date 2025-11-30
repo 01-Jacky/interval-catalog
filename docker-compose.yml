@@ -18,6 +18,31 @@ services:
       - OUTPUT_JSON_PATH=${OUTPUT_JSON_PATH:-output/resorts.json}
       - LOG_FILE=${LOG_FILE:-logs/parser.log}
 
+  geocoder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      # Mount the output directory for reading input and writing output
+      - ./output:/app/output
+      # Mount the data directory for optional overrides file
+      - ./data:/app/data:ro
+      # Mount the logs directory to persist logs
+      - ./logs:/app/logs
+    container_name: interval-geocoder
+    entrypoint: ["python", "scripts/geocode_resorts.py"]
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - GEOCODE_PROVIDER=${GEOCODE_PROVIDER:-nominatim}
+      - GEOCODE_USER_AGENT=${GEOCODE_USER_AGENT:-interval-resort-viewer}
+      - GEOCODE_RATE_LIMIT=${GEOCODE_RATE_LIMIT:-1.0}
+      - GEOCODE_INPUT_PATH=${GEOCODE_INPUT_PATH:-output/resorts.json}
+      - GEOCODE_OUTPUT_PATH=${GEOCODE_OUTPUT_PATH:-output/resorts_geocoded.json}
+      - GEOCODE_CACHE_PATH=${GEOCODE_CACHE_PATH:-output/geocode_cache.json}
+      - GEOCODE_OVERRIDES_PATH=${GEOCODE_OVERRIDES_PATH:-data/geocode_overrides.json}
+      - GEOCODE_LOG_FILE=${GEOCODE_LOG_FILE:-logs/geocoder.log}
+
   test:
     build:
       context: .
