@@ -15,6 +15,13 @@ build/
 output/*.json
 output/*.csv
 
+# Logs
+logs/
+*.log
+
+# Environment variables
+.env
+
 # IDE
 .vscode/
 .idea/
@@ -28,3 +35,8 @@ Thumbs.db
 
 # Docker
 .docker/
+
+# Testing
+htmlcov/
+.coverage
+.pytest_cache/

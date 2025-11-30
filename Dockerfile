@@ -15,10 +15,18 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY parse_resorts.py .
+COPY src/ ./src/
+COPY config/ ./config/
+COPY scripts/ ./scripts/
+COPY tests/ ./tests/
+COPY pytest.ini ./
 
-# Create output directory
-RUN mkdir -p /app/output
+# Create necessary directories
+RUN mkdir -p /app/output /app/logs
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
 
 # Set the entrypoint
-ENTRYPOINT ["python", "parse_resorts.py"]
+ENTRYPOINT ["python", "scripts/parse_resorts.py"]

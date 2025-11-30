@@ -2,16 +2,20 @@
 """
 Interval International Resort Directory Parser
 
-This script parses an HTML file from Interval International containing timeshare
+This module parses an HTML file from Interval International containing timeshare
 resort directory listings and extracts structured data for each resort code.
 """
 
 import json
 import html
+import logging
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from collections import Counter
 from bs4 import BeautifulSoup, Tag
+
+
+logger = logging.getLogger(__name__)
 
 
 class ResortParser:
@@ -37,14 +41,19 @@ class ResortParser:
         """
         self.html_path = Path(html_path)
         self.soup: Optional[BeautifulSoup] = None
-        self.resorts: List[Dict[str, any]] = []
+        self.resorts: List[Dict[str, Any]] = []
 
     def load_html(self) -> None:
         """Load and parse the HTML file."""
-        print(f"Loading HTML file: {self.html_path}")
+        logger.info(f"Loading HTML file: {self.html_path}")
+
+        if not self.html_path.exists():
+            raise FileNotFoundError(f"HTML file not found: {self.html_path}")
+
         with open(self.html_path, 'r', encoding='utf-8') as f:
             self.soup = BeautifulSoup(f.read(), 'html.parser')
-        print("HTML file loaded successfully")
+
+        logger.info("HTML file loaded successfully")
 
     def extract_tier_from_icon(self, code_div: Tag) -> Optional[str]:
         """
@@ -91,7 +100,7 @@ class ResortParser:
         """
         return html.unescape(text.strip())
 
-    def parse_resort_row(self, row: Tag) -> List[Dict[str, any]]:
+    def parse_resort_row(self, row: Tag) -> List[Dict[str, Any]]:
         """
         Parse a single resort row and extract all code records.
 
@@ -154,25 +163,25 @@ class ResortParser:
         if not self.soup:
             raise ValueError("HTML not loaded. Call load_html() first.")
 
-        print("Parsing resort rows...")
+        logger.info("Parsing resort rows...")
 
         # Find all TR elements that contain resort data
         # They typically have class 'resortallInclusive_*'
         resort_rows = self.soup.find_all('tr', class_=lambda x: x and 'resortallInclusive' in x)
 
         total_rows = len(resort_rows)
-        print(f"Found {total_rows} resort rows")
+        logger.info(f"Found {total_rows} resort rows")
 
         for idx, row in enumerate(resort_rows, 1):
             if idx % 100 == 0:
-                print(f"Processing row {idx}/{total_rows}...")
+                logger.info(f"Processing row {idx}/{total_rows}...")
 
             records = self.parse_resort_row(row)
             self.resorts.extend(records)
 
-        print(f"Parsing complete. Extracted {len(self.resorts)} resort code records")
+        logger.info(f"Parsing complete. Extracted {len(self.resorts)} resort code records")
 
-    def generate_statistics(self) -> Dict[str, any]:
+    def generate_statistics(self) -> Dict[str, Any]:
         """
         Generate statistics about the parsed data.
 
@@ -199,26 +208,27 @@ class ResortParser:
 
         return stats
 
-    def print_statistics(self, stats: Dict[str, any]) -> None:
+    def print_statistics(self, stats: Dict[str, Any]) -> None:
         """
         Print statistics in a readable format.
 
         Args:
             stats: Statistics dictionary
         """
-        print("\n" + "="*60)
-        print("PARSING STATISTICS")
-        print("="*60)
-        print(f"Total resort entries (unique name+location): {stats['total_resort_rows']}")
-        print(f"Total code records created: {stats['total_code_records']}")
-        print(f"All-inclusive resorts: {stats['all_inclusive_count']}")
-        print(f"\nResorts with multiple codes: {stats['multi_code_resort_count']}")
-        print(f"Maximum codes per resort: {stats['max_codes_per_resort']}")
-        print("\nCount by tier:")
+        separator = "=" * 60
+        logger.info(f"\n{separator}")
+        logger.info("PARSING STATISTICS")
+        logger.info(separator)
+        logger.info(f"Total resort entries (unique name+location): {stats['total_resort_rows']}")
+        logger.info(f"Total code records created: {stats['total_code_records']}")
+        logger.info(f"All-inclusive resorts: {stats['all_inclusive_count']}")
+        logger.info(f"\nResorts with multiple codes: {stats['multi_code_resort_count']}")
+        logger.info(f"Maximum codes per resort: {stats['max_codes_per_resort']}")
+        logger.info("\nCount by tier:")
         for tier, count in sorted(stats['tier_counts'].items(), key=lambda x: x[1], reverse=True):
             tier_name = tier if tier else 'No tier (Standard)'
-            print(f"  {tier_name}: {count}")
-        print("="*60 + "\n")
+            logger.info(f"  {tier_name}: {count}")
+        logger.info(f"{separator}\n")
 
     def save_to_json(self, output_path: str) -> None:
         """
@@ -230,12 +240,12 @@ class ResortParser:
         output_file = Path(output_path)
         output_file.parent.mkdir(parents=True, exist_ok=True)
 
-        print(f"Saving data to {output_file}")
+        logger.info(f"Saving data to {output_file}")
         with open(output_file, 'w', encoding='utf-8') as f:
             json.dump(self.resorts, f, indent=2, ensure_ascii=False)
-        print(f"Data saved successfully ({len(self.resorts)} records)")
+        logger.info(f"Data saved successfully ({len(self.resorts)} records)")
 
-    def run(self, output_path: str) -> Tuple[List[Dict[str, any]], Dict[str, any]]:
+    def run(self, output_path: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """
         Run the complete parsing pipeline.
 
@@ -252,20 +262,3 @@ class ResortParser:
         self.save_to_json(output_path)
 
         return self.resorts, stats
-
-
-def main() -> None:
-    """Main entry point for the script."""
-    # Input and output paths
-    input_html = 'data/interval_11_28/interval_directory_11_28_2025.html'
-    output_json = 'output/resorts.json'
-
-    # Create parser and run
-    parser = ResortParser(input_html)
-    parser.run(output_json)
-
-    print("\nParsing complete! Check the output folder for results.")
-
-
-if __name__ == '__main__':
-    main()

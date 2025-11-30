@@ -8,6 +8,30 @@ services:
       - ./data:/app/data:ro
       # Mount the output directory to persist results
       - ./output:/app/output
+      # Mount the logs directory to persist logs
+      - ./logs:/app/logs
     container_name: interval-parser
     environment:
       - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - INPUT_HTML_PATH=${INPUT_HTML_PATH:-data/interval_11_28/interval_directory_11_28_2025.html}
+      - OUTPUT_JSON_PATH=${OUTPUT_JSON_PATH:-output/resorts.json}
+      - LOG_FILE=${LOG_FILE:-logs/parser.log}
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      # Mount source code for testing
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./pytest.ini:/app/pytest.ini
+      # Mount coverage reports
+      - ./htmlcov:/app/htmlcov
+    container_name: interval-parser-test
+    entrypoint: ["python", "-m", "pytest"]
+    command: ["-v", "--cov=src", "--cov-report=html", "--cov-report=term"]
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
