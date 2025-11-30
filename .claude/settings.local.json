@@ -3,7 +3,10 @@
     "allow": [
       "Bash(docker compose build:*)",
       "Bash(tree:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(python3:*)",
+      "Bash(docker compose run:*)"
     ],
     "deny": [],
     "ask": []

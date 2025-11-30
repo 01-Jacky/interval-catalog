@@ -57,7 +57,7 @@ class ResortGeocoder:
             with open(self.cache_file, 'w') as f:
                 # Convert tuples to lists for JSON serialization
                 cache_data = {k: list(v) if v[0] is not None else None for k, v in self.cache.items()}
-                json.dump(cache_data, f, indent=2)
+                json.dump(cache_data, f, indent=2, ensure_ascii=False)
 
     def _normalize_location(self, location: str) -> str:
         """
@@ -277,14 +277,14 @@ class ResortGeocoder:
 
         logger.info(f"Writing enriched data to: {output_file}")
         with open(output_file, 'w') as f:
-            json.dump(enriched_resorts, f, indent=2)
+            json.dump(enriched_resorts, f, indent=2, ensure_ascii=False)
 
         # Save failed resorts to a separate file for easy review
         if stats["failed_resorts"]:
             failed_file = output_file.parent / "geocode_failed.json"
             logger.info(f"Writing {len(stats['failed_resorts'])} failed resorts to: {failed_file}")
             with open(failed_file, 'w') as f:
-                json.dump(stats["failed_resorts"], f, indent=2)
+                json.dump(stats["failed_resorts"], f, indent=2, ensure_ascii=False)
 
         self._log_statistics(stats, output_file.parent / "geocode_failed.json" if stats["failed_resorts"] else None)
 
