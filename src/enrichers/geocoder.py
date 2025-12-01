@@ -2,10 +2,12 @@
 
 import json
 import logging
+import ssl
 from pathlib import Path
 from time import sleep
 from typing import Dict, List, Optional, Tuple
 
+import certifi
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderServiceError
 
@@ -38,7 +40,10 @@ class ResortGeocoder:
         self.cache = self._load_cache()
 
         if provider == "nominatim":
-            self.geolocator = Nominatim(user_agent=user_agent)
+            # Create SSL context to avoid certificate verification issues
+            ctx = ssl.create_default_context(cafile=certifi.where())
+            # Use longer timeout (10s) to handle slow geocoding service responses
+            self.geolocator = Nominatim(user_agent=user_agent, ssl_context=ctx, timeout=10)
         else:
             raise ValueError(f"Unsupported provider: {provider}")
 
@@ -78,52 +83,135 @@ class ResortGeocoder:
             logger.debug(f"Normalized location: '{location}' -> '{normalized}'")
         return normalized
 
-    def _get_fallback_location(self, location: str) -> Optional[str]:
+    def _preprocess_location(self, location: str) -> str:
         """
-        Get a fallback location string if the original fails to geocode.
+        Preprocess location string to fix common issues.
 
         Args:
             location: Original location string
 
         Returns:
-            Fallback location string or None if no fallback available
+            Preprocessed location string
         """
-        # Fallback patterns: try simpler versions of complex location names
-        fallback_patterns = [
-            ("Dutch Caribbean", "Caribbean"),
-            ("Honolulu, Oahu, Hawaii", "Honolulu, Hawaii"),
-        ]
+        processed = location
 
-        for pattern, fallback in fallback_patterns:
-            if pattern.lower() in location.lower():
-                return fallback
+        # Fix common typos in country names
+        typo_fixes = {
+            ", lndia": ", India",  # lowercase L instead of uppercase I
+            ", Lndia": ", India",
+        }
+        for typo, fix in typo_fixes.items():
+            if processed.endswith(typo):
+                processed = processed.replace(typo, fix)
+                logger.debug(f"Fixed typo: '{location}' -> '{processed}'")
+                return processed
 
-        return None
+        return processed
+
+    def _get_location_variations(self, location: str) -> List[str]:
+        """
+        Get multiple variations of a location string to try for geocoding.
+
+        Returns variations in order from most specific to least specific.
+        Each variation uses a different strategy that has proven successful.
+
+        Args:
+            location: Original location string
+
+        Returns:
+            List of location string variations to try
+        """
+        import re
+        variations = []
+        parts = [p.strip() for p in location.split(",")]
+
+        # Variation 1: Remove parenthetical content
+        # "Intervale (North Conway), NH" -> "Intervale, NH"
+        if "(" in location and ")" in location:
+            no_parens = re.sub(r'\s*\([^)]*\)', '', location)
+            if no_parens != location:
+                variations.append(no_parens)
+                logger.debug(f"Variation (remove parens): '{no_parens}'")
+
+            # Also try using what's inside the parentheses instead
+            # "Intervale (North Conway), NH" -> "North Conway, NH"
+            match = re.search(r'\(([^)]+)\)', parts[0])
+            if match and len(parts) > 1:
+                inner_content = match.group(1).strip()
+                alternative = ", ".join([inner_content] + parts[1:])
+                variations.append(alternative)
+                logger.debug(f"Variation (use parens content): '{alternative}'")
+
+        # Variation 2: Remove common descriptive words from first component
+        # "Ialyssos Beach" -> "Ialyssos"
+        first_part = parts[0]
+        descriptors_to_remove = [" Beach", " Bay", " Harbor", " Harbour"]
+        for descriptor in descriptors_to_remove:
+            if first_part.endswith(descriptor):
+                simplified_first = first_part[:-len(descriptor)]
+                simplified_location = ", ".join([simplified_first] + parts[1:])
+                variations.append(simplified_location)
+                logger.debug(f"Variation (remove '{descriptor}'): '{simplified_location}'")
+                break
+
+        # Variation 3: For 3+ components, try first + last (City, Country)
+        # "Puerto del Carmen, Lanzarote, Canary Islands, Spain" -> "Puerto del Carmen, Spain"
+        if len(parts) >= 3:
+            # Special case: if last component is "Dutch Caribbean", remove it first
+            if parts[-1] == "Dutch Caribbean":
+                simplified = ", ".join(parts[:-1])
+                variations.append(simplified)
+                logger.debug(f"Variation (remove Dutch Caribbean): '{simplified}'")
+            else:
+                simplified = f"{parts[0]}, {parts[-1]}"
+                variations.append(simplified)
+                logger.debug(f"Variation (first + last): '{simplified}'")
+
+        # Variation 4: Just the first component (city/town name)
+        # Only use this as a last resort if we have NO country/state info at all
+        # This is risky as it can match the wrong location (e.g., San Pedro, CA vs Belize)
+        # Skip this variation to avoid ambiguous results
+        # if len(parts) > 1:
+        #     variations.append(parts[0])
+        #     logger.debug(f"Variation (first only): '{parts[0]}'")
+
+        return variations
 
     def geocode_location(
         self,
         location: str,
-        max_retries: int = 3
+        max_retries: int = 2
     ) -> Tuple[Optional[float], Optional[float]]:
         """
         Geocode a location string to coordinates.
 
+        Uses a smart fallback strategy:
+        1. Try the original location (with retry on actual timeout)
+        2. If no results, try multiple variations (remove Beach, parentheticals, simplify, etc.)
+        3. Cache the result to avoid repeated API calls
+
         Args:
             location: Location string to geocode
-            max_retries: Maximum retry attempts on timeout
+            max_retries: Maximum retry attempts on actual network timeout (not for "no results")
 
         Returns:
             Tuple of (latitude, longitude) or (None, None) if failed
         """
-        # Normalize location string
-        normalized_location = self._normalize_location(location)
+        # Preprocess and normalize location string
+        preprocessed = self._preprocess_location(location)
+        normalized_location = self._normalize_location(preprocessed)
 
-        # Check cache first
+        # Check cache first, but skip cached failures to allow retrying
         if normalized_location in self.cache:
-            logger.debug(f"Cache hit for: {normalized_location}")
-            return self.cache[normalized_location]
+            cached_value = self.cache[normalized_location]
+            # Only use cache if it's a successful geocode (not None, None)
+            if cached_value[0] is not None and cached_value[1] is not None:
+                logger.debug(f"Cache hit for: {normalized_location}")
+                return cached_value
+            else:
+                logger.debug(f"Skipping cached failure for: {normalized_location} (will retry)")
 
-        # Attempt geocoding with retries
+        # Try the original (preprocessed/normalized) location first
         for attempt in range(max_retries):
             try:
                 result = self.geolocator.geocode(normalized_location)
@@ -134,30 +222,20 @@ class ResortGeocoder:
                     sleep(self.rate_limit_delay)
                     return coords
                 else:
-                    # Try fallback location if available
-                    fallback = self._get_fallback_location(normalized_location)
-                    if fallback:
-                        logger.info(f"Trying fallback for '{normalized_location}': '{fallback}'")
-                        fallback_result = self.geolocator.geocode(fallback)
-                        if fallback_result:
-                            coords = (fallback_result.latitude, fallback_result.longitude)
-                            self.cache[normalized_location] = coords
-                            logger.info(f"Geocoded via fallback: {normalized_location} -> {coords}")
-                            sleep(self.rate_limit_delay)
-                            return coords
-
-                    logger.warning(f"No results for: {normalized_location}")
-                    self.cache[normalized_location] = (None, None)
-                    return (None, None)
+                    # No results - don't retry, try variations instead
+                    logger.debug(f"No results for original location: {normalized_location}")
+                    break
 
             except GeocoderTimedOut:
-                logger.warning(f"Timeout geocoding {normalized_location}, attempt {attempt + 1}/{max_retries}")
+                # Actual network timeout - retry is worthwhile
+                logger.warning(f"Network timeout geocoding {normalized_location}, attempt {attempt + 1}/{max_retries}")
                 if attempt < max_retries - 1:
                     sleep(self.rate_limit_delay * 2)
+                    continue
                 else:
-                    logger.error(f"Failed to geocode after {max_retries} attempts: {normalized_location}")
-                    self.cache[normalized_location] = (None, None)
-                    return (None, None)
+                    # After max retries on timeout, still try variations below
+                    logger.warning(f"Timeout persists after {max_retries} attempts, trying variations...")
+                    break
 
             except GeocoderServiceError as e:
                 logger.error(f"Service error geocoding {normalized_location}: {e}")
@@ -168,6 +246,42 @@ class ResortGeocoder:
                 self.cache[normalized_location] = (None, None)
                 return (None, None)
 
+        # Original location failed - try variations
+        variations = self._get_location_variations(normalized_location)
+
+        for variation in variations:
+            try:
+                logger.info(f"Trying variation for '{normalized_location}': '{variation}'")
+                result = self.geolocator.geocode(variation)
+
+                if result:
+                    coords = (result.latitude, result.longitude)
+                    # Cache under the original location key
+                    self.cache[normalized_location] = coords
+                    logger.info(f"Geocoded via variation '{variation}': {normalized_location} -> {coords}")
+                    sleep(self.rate_limit_delay)
+                    return coords
+                else:
+                    logger.debug(f"No results for variation: {variation}")
+
+            except GeocoderTimedOut:
+                logger.warning(f"Timeout on variation: {variation}")
+                # Continue to next variation
+                sleep(self.rate_limit_delay)
+                continue
+
+            except GeocoderServiceError as e:
+                logger.warning(f"Service error on variation '{variation}': {e}")
+                continue
+            except Exception as e:
+                logger.warning(f"Error on variation '{variation}': {e}")
+                continue
+
+            sleep(self.rate_limit_delay)
+
+        # All attempts failed
+        logger.error(f"Failed to geocode with all variations: {normalized_location}")
+        self.cache[normalized_location] = (None, None)
         return (None, None)
 
     def enrich_resorts(
