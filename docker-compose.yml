@@ -4,6 +4,9 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
+      # Mount source code for live development changes
+      - ./src:/app/src
+      - ./scripts:/app/scripts
       # Mount the data directory containing the HTML file
       - ./data:/app/data:ro
       # Mount the output directory to persist results
@@ -23,6 +26,9 @@ services:
       context: .
       dockerfile: Dockerfile
     volumes:
+      # Mount source code for live development changes
+      - ./src:/app/src
+      - ./scripts:/app/scripts
       # Mount the output directory for reading input and writing output
       - ./output:/app/output
       # Mount the data directory for optional overrides file
